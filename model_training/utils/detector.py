@@ -265,7 +265,49 @@ def gram_margin_loss(feats_reg, feats_adv, margin):
         
     return F.relu(margin - layer_deviations.sum(dim=0)).pow(2).mean()
 
+def feats_idxs(feats, idxs):
+    return [f[idxs] for f in feats]
 
+def new_gram_margin_loss(feats_reg, output_reg, feats_adv, output_adv, golds, margin=20):
+    indices_reg = torch.max(output_reg.cpu(), 1)[1]
+    indices_adv = torch.max(output_adv.cpu(), 1)[1]
+    
+    total_size = 0
+    loss = []
+    for i in range(10):
+        idxs_adv = torch.where(i == indices_adv)[0]
+        idxs_reg = torch.where(i == golds)[0]
+        
+        batch_size = min(idxs_adv.shape[0], idxs_reg.shape[0])
+        if batch_size == 0:
+            continue
+            
+        if batch_size < idxs_adv.shape[0]:
+            idxs_reg = torch.cat([idxs_reg] * 10)
+            batch_size = idxs_adv.shape[0]
+            if idxs_reg.shape[0] < batch_size:
+                continue
+                
+            idxs_reg = idxs_reg[:batch_size]
+        total_size += batch_size
+        
+        idxs_adv, idxs_reg = idxs_adv[:batch_size], idxs_reg[:batch_size]
+        
+        class_loss = gram_margin_loss(feats_idxs(feats_reg, idxs_reg), feats_idxs(feats_adv, idxs_adv), margin)
+        loss.append(class_loss)
+    
+    return torch.stack(loss).sum()
 
+def gram_matrix(layer):
+    b, ch, h, w = layer.size()
+    features = layer.view(b, ch, w * h)
+    gram = torch.matmul(features, features.transpose(1, 2))
+    
+    return gram /(ch * h * w)
 
-
+def style_loss(lhs, rhs):
+    loss = 0.0
+    for i in range(len(lhs)):
+        loss += (gram_matrix(lhs[i]) - gram_matrix(rhs[i])).pow(2).sum()
+    
+    return loss

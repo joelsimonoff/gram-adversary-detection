@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from utils.detector import new_gram_margin_loss
 
 
 def tensor_clamp(x, a_min, a_max):
@@ -147,6 +148,38 @@ class PGD(nn.Module):
 #
 #         return adv_bx.clamp(0, 1)
 
+
+class PGD_margin(nn.Module):
+    def __init__(self, epsilon=8./255, num_steps=10, step_size=2./255, grad_sign=True):
+        super().__init__()
+        self.epsilon = epsilon
+        self.num_steps = num_steps
+        self.step_size = step_size
+        self.grad_sign = grad_sign
+
+    def forward(self, model, bx, by, feats_reg, output_reg, margin=20):
+        """
+        :param model: the classifier's forward method
+        :param bx: batch of images
+        :param by: true labels
+        :return: perturbed batch of images
+        """
+        adv_bx = bx.detach()
+        adv_bx += torch.zeros_like(adv_bx).uniform_(-self.epsilon, self.epsilon)
+        
+        for i in range(self.num_steps):
+            adv_bx.requires_grad_()
+            with torch.enable_grad():
+                logits, feats_adv = model.gram_forward(adv_bx * 2 - 1)
+                margin_loss = new_gram_margin_loss(feats_reg, output_reg, feats_adv, logits, by, margin).cuda()
+                
+                loss = 1/2 * F.cross_entropy(logits, by, reduction='sum') + 1/2 * margin_loss
+                
+            grad = torch.autograd.grad(loss, adv_bx, only_inputs=True)[0]
+            adv_bx = adv_bx.detach() + self.step_size * torch.sign(grad.detach())
+            adv_bx = torch.min(torch.max(adv_bx, bx - self.epsilon), bx + self.epsilon).clamp(0, 1)
+            
+        return adv_bx
 
 class PGD_l2(nn.Module):
     def __init__(self, epsilon, num_steps, step_size):
