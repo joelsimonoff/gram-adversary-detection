@@ -1,3 +1,1 @@
 epoch,time(s),train_loss,test_loss,test_error(%),gram_auroc
-001,00380,1.812921,0.00000,74.66,0.41
-010,00828,1.840141,0.00000,68.31,0.14
