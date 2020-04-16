@@ -350,8 +350,9 @@ def select_features(feat_list, idxs):
     return [f[idxs] for f in feat_list]
     
 def get_deviations(feat_list, mins,maxs):
-    if len(feat_list[0]) == 0:
+    if len(mins) == 0 or len(maxs) == 0 or len(feat_list) == 0 or len(feat_list[0]) == 0:
         return np.array([])
+    
     deviations = []
     for L,feat_L in enumerate(feat_list):
         
