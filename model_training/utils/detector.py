@@ -301,7 +301,7 @@ def gram_margin_loss(feats_reg, feats_adv, margin):
         
         layer_deviations[i] = max_dist + min_dist
         
-    return F.relu(margin - layer_deviations.sum(dim=0)).pow(2).mean()
+    return F.relu(margin - layer_deviations.mean(dim=0)).pow(2).mean()
 
 def feats_idxs(feats, idxs):
     return [f[idxs] for f in feats]
