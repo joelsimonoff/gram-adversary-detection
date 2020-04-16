@@ -240,6 +240,44 @@ class Detector:
             return F.relu(loss/(logits.shape[0] + 10**-6))
         else:
             return F.relu(loss - self.target_deviation)
+    
+    def compute_auroc_advs(self, adv_logits, adv_feats, adv_ys):
+        confs = F.softmax(adv_logits,dim=1).cpu().numpy()
+        preds = np.argmax(confs,axis=1)
+
+        adv_deviations = None
+        failed_adv_deviations = None
+
+        for PRED in self.classes:
+            idxs = np.where((np.array(preds) == PRED) & (np.array(adv_ys) != PRED))[0]
+            idxs_failed = np.where((np.array(preds) == PRED) & (np.array(adv_ys) == PRED))[0]
+
+            mins = self.mins[PRED]
+            maxs = self.maxs[PRED]
+
+            adv_dev_class = get_deviations(select_features(adv_feats,idxs), mins=mins, maxs=maxs)
+            failed_adv_dev_class = get_deviations(select_features(adv_feats,idxs_failed), mins=mins, maxs=maxs)
+
+            if len(adv_dev_class) > 0:
+                if adv_deviations is None:
+                    adv_deviations = adv_dev_class
+                else:
+                    adv_deviations = np.concatenate([adv_deviations, adv_dev_class],axis=0)
+            
+            if len(failed_adv_dev_class) > 0:
+                if failed_adv_deviations is None:
+                    failed_adv_deviations = failed_adv_dev_class
+                else:
+                    failed_adv_deviations = np.concatenate([failed_adv_deviations, failed_adv_dev_class], axis=0)
+
+        failed_results, results = 0,0
+        if failed_adv_deviations is not None and len(failed_adv_deviations) != 0:
+            failed_results = detect(self.all_test_deviations, failed_adv_deviations)["AUROC"]
+
+        if adv_deviations is not None and len(adv_deviations) != 0:
+            results = detect(self.all_test_deviations, adv_deviations)["AUROC"]
+
+        return results, failed_results
 
 def gram_margin_loss(feats_reg, feats_adv, margin):
     assert len(feats_reg) == len(feats_adv)
@@ -297,6 +335,36 @@ def new_gram_margin_loss(feats_reg, output_reg, feats_adv, output_adv, golds, ma
         loss.append(class_loss)
     
     return torch.stack(loss).sum()
+
+def calc_auroc(all_test_deviations,all_ood_deviations):
+    average_results = {}
+
+    test_deviations = all_test_deviations.sum(axis=1)
+    ood_deviations = all_ood_deviations.sum(axis=1)
+
+    results = callog.compute_metric(-test_deviations,-ood_deviations)
+
+    return results["AUROC"]
+
+def select_features(feat_list, idxs):
+    return [f[idxs] for f in feat_list]
+    
+def get_deviations(feat_list, mins,maxs):
+    if len(feat_list[0]) == 0:
+        return np.array([])
+    deviations = []
+    for L,feat_L in enumerate(feat_list):
+        
+        g_p = G_p(feat_L)
+
+        dev =  (F.relu(mins[L][0]-g_p)/torch.abs(mins[L][0]+10**-6)).sum(dim=1,keepdim=True)
+        dev +=  (F.relu(g_p-maxs[L][0])/torch.abs(maxs[L][0]+10**-6)).sum(dim=1,keepdim=True)
+
+        deviations.append(dev.cpu().numpy())
+            
+    deviations = np.concatenate(deviations, axis=1)
+    
+    return deviations
 
 def gram_matrix(layer):
     b, ch, h, w = layer.size()
