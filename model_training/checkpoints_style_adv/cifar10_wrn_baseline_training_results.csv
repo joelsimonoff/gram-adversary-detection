@@ -1,1 +1,0 @@
-epoch,time(s),train_loss,test_loss,test_error(%),gram_auroc
