@@ -149,13 +149,14 @@ class PGD(nn.Module):
 #         return adv_bx.clamp(0, 1)
 
 class PGD_margin(nn.Module):
-    def __init__(self, epsilon=8./255, num_steps=10, step_size=2./255, margin = 20, verbose=False):
+    def __init__(self, epsilon=8./255, num_steps=10, step_size=2./255, margin = 20, margin_scale=1.0, verbose=False):
         super().__init__()
         self.epsilon = epsilon
         self.num_steps = num_steps
         self.step_size = step_size
         self.verbose = verbose
         self.margin = margin
+        self.margin_scale = margin_scale
 
     def forward(self, model, bx, by, feats_reg):
         """
@@ -172,7 +173,7 @@ class PGD_margin(nn.Module):
             
             with torch.enable_grad():
                 logits, feats_adv = model.gram_forward(adv_bx * 2 - 1)
-                gram_margin = gram_margin_loss(feats_reg, feats_adv, self.margin).cuda()
+                gram_margin = self.margin_scale * gram_margin_loss(feats_reg, feats_adv, self.margin).cuda()
                 cent_loss = F.cross_entropy(logits, by, reduction='mean').cuda()
                 
                 loss = cent_loss + gram_margin
