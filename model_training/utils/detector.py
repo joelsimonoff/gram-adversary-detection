@@ -18,16 +18,18 @@ def detect(all_test_deviations,all_ood_deviations, test_confs = None, ood_confs=
         ood_confs = np.array(ood_confs)
 
     average_results = {}
-    for i in range(1,11):
-        test_deviations = all_test_deviations.sum(axis=1)
-        ood_deviations = all_ood_deviations.sum(axis=1)
 
-        results = callog.compute_metric(-test_deviations,-ood_deviations)
-        for m in results:
-            average_results[m] = average_results.get(m,0)+results[m]
+    test_deviations = all_test_deviations.sum(axis=1)
+    ood_deviations = all_ood_deviations.sum(axis=1)
 
-    for m in average_results:
-        average_results[m] /= i
+    print("Test Set:")
+    print(test_deviations.mean(), np.percentile(test_deviations, 50), np.percentile(test_deviations, 95), np.percentile(test_deviations, 5))
+    print("Adversarial Deviations:")
+    print(ood_deviations.mean(), np.percentile(ood_deviations, 50), np.percentile(ood_deviations, 95), np.percentile(ood_deviations, 5))
+
+    results = callog.compute_metric(-test_deviations,-ood_deviations)
+    for m in results:
+        average_results[m] = average_results.get(m,0)+results[m]
 
     return average_results
 
