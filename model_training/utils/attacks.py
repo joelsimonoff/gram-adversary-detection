@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from utils.detector import gram_margin_loss
+from utils.detector import gram_margin_loss, ScoreDetector
 
 
 def tensor_clamp(x, a_min, a_max):
@@ -148,6 +148,86 @@ class PGD(nn.Module):
 #
 #         return adv_bx.clamp(0, 1)
 
+class PGD_score(nn.Module):
+    def __init__(self, epsilon=8./255, num_steps=10, step_size=2./255, score_scale=100, max_score=0.12, verbose=False, detector=ScoreDetector()):
+        super().__init__()
+        self.epsilon = epsilon
+        self.num_steps = num_steps
+        self.step_size = step_size
+        self.verbose = verbose
+        self.detector = detector
+        self.score_scale = score_scale
+        self.max_score = max_score
+
+    def forward(self, model, bx, by):
+        """
+        :param model: the classifier's forward method
+        :param bx: batch of images
+        :param by: true labels
+        :return: perturbed batch of images
+        """
+        adv_bx = bx.detach()
+        adv_bx += torch.zeros_like(adv_bx).uniform_(-self.epsilon, self.epsilon)
+        
+        for i in range(self.num_steps):
+            adv_bx.requires_grad_()
+            
+            with torch.enable_grad():
+                logits, feats_adv = model.gram_forward(adv_bx * 2 - 1)
+                gram_score = F.softplus(self.detector.score(feats_adv) - self.max_score, beta=1000)
+                cent_loss = F.cross_entropy(logits, by, reduction='mean').cuda()
+                
+                loss = cent_loss - self.score_scale * gram_score
+
+                if self.verbose:
+                    print("Step: {}, Cent: {}, Gram: {}, Total Loss: {}".format(i, cent_loss.data, gram_score.data, loss.data))
+            grad = torch.autograd.grad(loss, adv_bx, only_inputs=True)[0]
+            adv_bx = adv_bx.detach() + self.step_size * torch.sign(grad.detach())
+            adv_bx = torch.min(torch.max(adv_bx, bx - self.epsilon), bx + self.epsilon).clamp(0, 1)
+            
+        return adv_bx
+
+class PGD_Gram(nn.Module):
+    def __init__(self, detector, epsilon=8/255, num_steps=10, step_size=2/255, grad_sign=True, verbose=True):
+        super().__init__()
+        self.detector = detector
+        self.epsilon = epsilon
+        self.num_steps = num_steps
+        self.step_size = step_size
+        self.grad_sign = grad_sign
+        self.verbose = verbose
+        
+        
+    
+    def forward(self, model, bx, by):
+        """
+        :param model: the classifier's forward method
+        :param bx: batch of images
+        :param by: true labels
+        :return: perturbed batch of images
+        """        
+        adv_bx = bx.detach()
+        adv_bx += torch.zeros_like(adv_bx).uniform_(-self.epsilon, self.epsilon)
+
+        for i in range(self.num_steps):
+            adv_bx.requires_grad_()
+            with torch.enable_grad():
+                logits, feats = model.gram_forward(adv_bx * 2 - 1)
+                
+                cent_loss = 0.0 * F.cross_entropy(logits, by, reduction='mean')
+                gram_loss = self.detector.gram_loss(logits, feats)
+                
+                loss = cent_loss - gram_loss
+                                
+            if self.verbose:
+                print("Step: {}, Cent: {}, Gram: {}, Total Loss: {}".format(i, cent_loss, gram_loss, loss))
+            
+            grad = torch.autograd.grad(loss, adv_bx, only_inputs=True)[0]
+            adv_bx = adv_bx.detach() + self.step_size * torch.sign(grad.detach())
+            adv_bx = torch.min(torch.max(adv_bx, bx - self.epsilon), bx + self.epsilon).clamp(0, 1)
+
+        return adv_bx
+
 class PGD_margin(nn.Module):
     def __init__(self, epsilon=8./255, num_steps=10, step_size=2./255, margin = 20, margin_scale=1.0, verbose=False):
         super().__init__()
@@ -173,7 +253,7 @@ class PGD_margin(nn.Module):
             
             with torch.enable_grad():
                 logits, feats_adv = model.gram_forward(adv_bx * 2 - 1)
-                gram_margin = self.margin_scale * gram_margin_loss(feats_reg, feats_adv, self.margin).cuda()
+                gram_margin = self.margin_scale * F.softplus(self.detector.score(feats_adv) - .125, beta=100).cuda()
                 cent_loss = F.cross_entropy(logits, by, reduction='mean').cuda()
                 
                 loss = cent_loss + gram_margin

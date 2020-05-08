@@ -6,6 +6,7 @@ import torch.optim as optim
 import torch.nn.init as init
 import numpy as np
 import math
+from sklearn import metrics
 
 def G_p(temp):
     temp = temp.reshape(temp.shape[0],temp.shape[1],-1)
@@ -21,11 +22,6 @@ def detect(all_test_deviations,all_ood_deviations, test_confs = None, ood_confs=
 
     test_deviations = all_test_deviations.sum(axis=1)
     ood_deviations = all_ood_deviations.sum(axis=1)
-
-    print("Test Set:")
-    print(test_deviations.mean(), np.percentile(test_deviations, 50), np.percentile(test_deviations, 95), np.percentile(test_deviations, 5))
-    print("Adversarial Deviations:")
-    print(ood_deviations.mean(), np.percentile(ood_deviations, 50), np.percentile(ood_deviations, 95), np.percentile(ood_deviations, 5))
 
     results = callog.compute_metric(-test_deviations,-ood_deviations)
     for m in results:
@@ -44,6 +40,55 @@ def cuda(ob):
         for j in range(len(ob[i])):
             ob[i][j] = ob[i][j].cuda()
     return ob
+
+
+class ScoreDetector:
+    def __init__(self, mean=True, normalize_gp=True):
+        self.normalize_gp = normalize_gp
+        self.mean = mean
+        None
+        
+    def G_p(self, temp):
+        normalizer = torch.prod(torch.tensor(temp.shape[1:]))
+        temp = temp.reshape(temp.shape[0],temp.shape[1],-1)
+        temp = (torch.matmul(temp,temp.transpose(dim0=2,dim1=1))).reshape(temp.shape[0],-1).sum(dim=1)
+
+        return temp/normalizer
+
+    def get_deviations(self, feat_list):
+        batch_deviations = []
+        for L,feat_L in enumerate(feat_list):
+            dev = 0
+
+            g_p = self.G_p(feat_L)
+            g_p = g_p
+            dev = g_p
+
+            if self.mean:   
+                batch_deviations.append(dev.mean())
+            else:
+                batch_deviations.append(dev)
+
+        return batch_deviations
+
+    def score(self, feats):
+        devs = self.get_deviations(feats)
+
+        return torch.stack(devs).mean(dim=0).reshape(-1,)
+   
+    def calc_auroc(self, feats_reg, feats_adv):
+        labels = np.array([0] * len(feats_reg[0]) + [1] * len(feats_adv[0]))
+        
+        old_mean = self.mean
+        
+        self.mean = False
+        scores = np.concatenate((self.score(feats_reg).cpu(), self.score(feats_adv).cpu()))
+        self.mean = old_mean
+        
+        fpr, tpr, _ = metrics.roc_curve(labels, scores)
+        
+        return metrics.auc(fpr, tpr)
+
 
 class Detector:
     def __init__(self, model, data_train, data_test=None, batch_size=128, pbar = None, batch_detector = False, train_golds=None):
@@ -241,7 +286,7 @@ class Detector:
         if self.batch_detector:
             return F.relu(loss/(logits.shape[0] + 10**-6))
         else:
-            return F.relu(loss - self.target_deviation)
+            return F.relu(loss - self.target_deviation + 10)
     
     def compute_auroc_advs(self, adv_logits, adv_feats, adv_ys):
         confs = F.softmax(adv_logits,dim=1).cpu().numpy()
