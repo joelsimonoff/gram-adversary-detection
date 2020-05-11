@@ -253,7 +253,7 @@ class PGD_margin(nn.Module):
             
             with torch.enable_grad():
                 logits, feats_adv = model.gram_forward(adv_bx * 2 - 1)
-                gram_margin = self.margin_scale * F.softplus(self.detector.score(feats_adv) - .125, beta=100).cuda()
+                gram_margin = self.margin_scale * min(gram_margin_loss(feats_reg, feats_adv, self.margin).cuda(), torch.tensor(390))
                 cent_loss = F.cross_entropy(logits, by, reduction='mean').cuda()
                 
                 loss = cent_loss + gram_margin
