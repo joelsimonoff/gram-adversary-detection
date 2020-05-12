@@ -1,4 +1,4 @@
-# Gram Matrix Adversarial Detectors
+# Gram Matrix Adversarial Example Detector
 
 This repository is dedicated to exploring the use of gram matrices for adversarial detection.
 
@@ -12,11 +12,11 @@ We used the Vector Institute's paper *(VI detector)* on utilizing gram matrices 
 
 ### Out of Distribution (OOD) vs Adversarial
 
-OOD examples are images that the model is not trained to predict on. For example, CIFAR10 images are out of distribution for a CIFAR100 model. Adversarial examples are images with small perturbations designed to fool models. We are using $L_\infty$ adversarial examples which means that $\lVert \text{Img} - \text{(Img + Pertubation)} \rVert_\infty < \epsilon$.
+OOD examples are images that the model is not trained to predict on. For example, ImageNet images are out of distribution for a CIFAR10 model. Adversarial examples are images with small perturbations designed to fool models. We are using $$L_\infty$$ adversarial examples which means that $\lVert \text{Img} - \text{(Img + Pertubation)} \rVert_\infty < \epsilon$.
 
 ### Minimum Viable Detector
 
-In order to make repurpose the detector in the most effective way possible, we need to see what to remove from the VI detector and what we may need to add. We found that we did not need to take the gram matrices to a specific power and we do not need to look at the gram matrices from every layers. Looking at the matrices from shallower layers (closer to input) seems to yield better adversarial detection accuracy. We found that in some circumstances we gained accuracy by setting `powers` from the VI detector to `powers=[1/2, 1]`; however, the benefit is minimal at best thus we recommend removing the powers variable.
+In order to repurpose the detector in the most effective way possible, we need to see what to remove from the VI detector and what we may need to add. We found that we did not need to take the gram matrices to a specific power and we do not need to look at the gram matrices from every layers. Looking at the matrices from shallower layers (closer to input) seems to yield better adversarial detection accuracy. We found that in some circumstances we gained accuracy by setting `powers` from the VI detector to `powers=[1/2, 1]`; however, the benefit is minimal at best thus we recommend removing the powers variable.
 
 Gram Matrix Calculator VI Detector:
 
