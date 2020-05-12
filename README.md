@@ -12,11 +12,11 @@ We used the Vector Institute's paper *(VI detector)* on utilizing gram matrices 
 
 ### Out of Distribution (OOD) vs Adversarial
 
-OOD examples are images that the model is not trained to predict on. For example, ImageNet images are out of distribution for a CIFAR10 model. Adversarial examples are images with small perturbations designed to fool models. We are using $$L_\infty$$ adversarial examples which means that $\lVert \text{Img} - \text{(Img + Pertubation)} \rVert_\infty < \epsilon$.
+OOD examples are images that the model is not trained to predict on. For example, ImageNet images are out of distribution for a CIFAR10 model. Adversarial examples are images with small perturbations designed to fool models. We are using $L_\infty$ adversarial examples which means that $\lVert \text{Img} - \text{(Img + Pertubation)} \rVert_\infty < \epsilon$.
 
 ### Minimum Viable Detector
 
-In order to repurpose the detector in the most effective way possible, we need to see what to remove from the VI detector and what we may need to add. We found that we did not need to take the gram matrices to a specific power and we do not need to look at the gram matrices from every layers. Looking at the matrices from shallower layers (closer to input) seems to yield better adversarial detection accuracy. We found that in some circumstances we gained accuracy by setting `powers` from the VI detector to `powers=[1/2, 1]`; however, the benefit is minimal at best thus we recommend removing the powers variable.
+In order to repurpose the detector in the most effective way possible, we need to see what to remove from the VI detector and what we may need to add. We found that we did not need to take the gram matrices to a specific power and we do not need to look at the gram matrices from every layer. Looking at the matrices from shallower layers (closer to input) seems to yield better adversarial detection accuracy. We found that in some circumstances we gained accuracy by setting `powers` from the VI detector to `powers=[1/2, 1]`; however, the benefit is minimal at best thus we recommend removing the powers variable.
 
 Gram Matrix Calculator VI Detector:
 
@@ -45,7 +45,7 @@ _Note: we found that summing across dim2 seems to accurately represent the total
 
 For this method, we leave in calibration code that calculates the max/min values of the training set for each layer in the model. This calibration step is slow and bulky. In order to remove the calibration step we used 2 techniques (will still need to tune a threshold, but less intensive than the prior detector):
 
-1. **Margin Detector:** Calculating a margin between adversarial perturbed examples and their corresponding test set examples. This works well for training loops because we'll often have both an adversarial example and its corresponding original image. However, this cannot work as a practical detector because at test time we don't have access to non-adversarial perturbed images in addition to the corresponding adversarial examples. The benefit to training in the loop with this detector is that it will force adversarial perturbations to cause an increase to the magnitude of the gram matrices. Unfortunately, it does this by obfuscating the gradient of the PGD margin loss with respect to the input (with each PGD step the attack gets worse which means the adversarial loss is not smooth).
+1. **Margin Detector:** Calculating a margin between adversarial perturbed examples and their corresponding test set examples. This works well for training loops because we'll often have both an adversarial example and its corresponding original image. However, this cannot work as a practical detector because at test time we don't have access to non-adversarial perturbed images in addition to the corresponding adversarial examples. The benefit of training in the loop with this detector is that it will force adversarial perturbations to increase the magnitude of the gram matrices (increases detectability). Unfortunately, it does this by obfuscating the gradient of the PGD margin loss with respect to the input (with each PGD step the attack gets worse which means the adversarial loss is not smooth).
 
 2. **Score Detector:** This detector is based on the original style loss presented in the neural style transfer paper: https://arxiv.org/pdf/1508.06576.pdf:
 
@@ -58,7 +58,7 @@ def G_p(self, temp):
     return temp/normalizer
 ```
 
-We then average take the average value of the gram vector for each layer. At the end we average the value for each layer to assign a score. The score tends to be higher for adversarial examples than for regular examples. **With this method we see an AUROC in the range of 0.94.** The code for this detector can be found in the `ScoreDetector` class in `new-work/model-training/utils/detector.py`.
+We then take the average value of the gram vector for each layer. At the end we average the value for each layer to assign a score. The score tends to be higher for adversarial examples than for regular examples. **With this method we see an AUROC in the range of 0.94.** The code for this detector can be found in the `ScoreDetector` class in `new-work/model-training/utils/detector.py`.
 
 
 ### Adversaries
@@ -73,10 +73,10 @@ Essentially: we want to maximize the cross_entropy (encourages the adversarial e
 
 In order for a model to be consider robust it must meet one of the following two scenarios:
 
-1. It is attack, but correctly classifies adversarial examples. This is the motivation behind adversarial training.
-2. The attack must be detected. If the attack is detected, then the system knows not to trust the output of the model.
+1. It is attacked, but correctly classifies adversarial examples. This is the motivation behind adversarial training.
+2. The attack is detected. If the attack is detected, then the system knows not to trust the output of the model.
 
-We attempt to train the model so it improves the detectability of adversarial examples. The goal is that if we make it near impossible to trick the model and the detector then the attack is effectively useless. Thus our training loss is of the form:
+We attempt to train the model so it improves the detectability of adversarial examples. The goal is that if we make it near impossible to trick the model and the detector at the same time then the attack is effectively useless. Thus our training loss is of the form:
 
 $\text{min}_{\text{cross_entropy}} \text{max}_{\text{detectability}} \text{cross_entropy} + \text{detectability}$
 
